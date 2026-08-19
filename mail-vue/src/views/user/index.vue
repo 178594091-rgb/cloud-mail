@@ -100,6 +100,7 @@
                       <el-dropdown-item v-else @click="restore(props.row)">{{ $t('restore') }}</el-dropdown-item>
                     </template>
                     <el-dropdown-item @click="openAccountList(props.row.userId)" >{{ $t('account') }}</el-dropdown-item>
+                    <el-dropdown-item @click="openMailboxApi(props.row)">{{ $t('verificationCodeApi') }}</el-dropdown-item>
                     <el-dropdown-item @click="openDetails(props.row)" >{{ $t('details') }}</el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
@@ -225,6 +226,14 @@
       <el-table v-if="batchRows.length" class="batch-preview" :data="batchRows" max-height="300" stripe>
         <el-table-column prop="email" :label="$t('emailAccount')" min-width="210"/>
         <el-table-column prop="password" :label="$t('password')" min-width="145"/>
+        <el-table-column :label="$t('verificationCodeApi')" width="100">
+          <template #default="props">
+            <el-button v-if="props.row.apiUrl" link type="primary" @click="copyText(props.row.apiUrl)">
+              {{ $t('copy') }}
+            </el-button>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
         <el-table-column :label="$t('tabStatus')" width="100">
           <template #default="props">
             <el-tag v-if="props.row.status === 'success'" type="success">{{ $t('batchSuccess') }}</el-tag>
@@ -244,6 +253,16 @@
         <el-button :disabled="batchLoading" @click="copyBatchCredentials">{{ $t('copyCredentials') }}</el-button>
         <el-button type="primary" :loading="batchLoading" :disabled="batchHasCompleted" @click="submitBatch">
           {{ $t('batchCreate') }}
+        </el-button>
+      </div>
+    </el-dialog>
+    <el-dialog class="dialog" v-model="mailboxApiShow" :title="$t('verificationCodeApi')">
+      <div class="dialog-box">
+        <el-input :model-value="mailboxApi.email" disabled/>
+        <el-input class="api-url-input" :model-value="mailboxApi.apiUrl" readonly/>
+        <el-alert :title="$t('mailboxApiNotice')" type="warning" :closable="false" show-icon/>
+        <el-button class="btn" type="primary" :loading="mailboxApiLoading" @click="copyText(mailboxApi.apiUrl)">
+          {{ $t('copyApiUrl') }}
         </el-button>
       </div>
     </el-dialog>
@@ -402,6 +421,14 @@
               </div>
             </template>
           </el-dropdown-item>
+          <el-dropdown-item @click="openMailboxApi(rightClickUser)">
+            <template #default>
+              <div class="right-dropdown-item">
+                <Icon icon="material-symbols:api" width="20" height="20" />
+                <span>{{ t('verificationCodeApi') }}</span>
+              </div>
+            </template>
+          </el-dropdown-item>
           <el-dropdown-item @click="openDetails(rightClickUser)" >
             <template #default>
               <div class="right-dropdown-item" >
@@ -447,6 +474,7 @@ import {isEmail} from "@/utils/verify-utils.js";
 import {useRoleStore} from "@/store/role.js";
 import {useUserStore} from "@/store/user.js";
 import {useI18n} from 'vue-i18n';
+import {mailboxApiCreate} from '@/request/mailbox-api.js';
 
 defineOptions({
   name: 'user'
@@ -532,6 +560,9 @@ const batchLoading = ref(false)
 const batchProgress = ref(0)
 const batchHasCompleted = ref(false)
 const batchRows = ref([])
+const mailboxApiShow = ref(false)
+const mailboxApiLoading = ref(false)
+const mailboxApi = reactive({email: '', apiUrl: ''})
 const setTypeShow = ref(false)
 const setPwdShow = ref(false)
 const pagerCount = ref(10)
@@ -844,11 +875,29 @@ async function copyBatchCredentials() {
   const rows = batchRows.value.filter(item => item.status !== 'failed')
   if (!rows.length) return
 
+  await copyText(rows.map(item => `${item.email}\t${item.password}\t${item.apiUrl || ''}`).join('\n'))
+}
+
+async function copyText(value) {
+  if (!value) return
   try {
-    await navigator.clipboard.writeText(rows.map(item => `${item.email}\t${item.password}`).join('\n'))
+    await navigator.clipboard.writeText(value)
     ElMessage({message: t('copySuccessMsg'), type: 'success', plain: true})
   } catch (error) {
     ElMessage({message: t('copyFailMsg'), type: 'error', plain: true})
+  }
+}
+
+async function openMailboxApi(user) {
+  mailboxApiShow.value = true
+  mailboxApiLoading.value = true
+  mailboxApi.email = user.email
+  mailboxApi.apiUrl = ''
+  try {
+    const data = await mailboxApiCreate(user.email)
+    mailboxApi.apiUrl = data.apiUrl
+  } finally {
+    mailboxApiLoading.value = false
   }
 }
 
@@ -871,16 +920,20 @@ async function submitBatch() {
         item.status = 'creating'
       })
 
-      const results = await Promise.allSettled(chunk.map(item => userAdd({
-        email: item.email,
-        password: item.password,
-        type: item.type,
-      }, true)))
+      const results = await Promise.allSettled(chunk.map(async item => {
+        await userAdd({
+          email: item.email,
+          password: item.password,
+          type: item.type,
+        }, true)
+        return mailboxApiCreate(item.email, true)
+      }))
 
       results.forEach((result, resultIndex) => {
         const row = chunk[resultIndex]
         if (result.status === 'fulfilled') {
           row.status = 'success'
+          row.apiUrl = result.value.apiUrl
           success += 1
         } else {
           row.status = 'failed'
@@ -1448,6 +1501,11 @@ function adjustWidth() {
       margin-top: 15px;
     }
   }
+}
+
+.api-url-input {
+  margin-top: 15px;
+  margin-bottom: 15px;
 }
 
 .select {
