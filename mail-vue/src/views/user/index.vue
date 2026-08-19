@@ -2,6 +2,9 @@
   <div class="user-box">
     <div class="header-actions">
       <Icon class="icon" icon="ion:add-outline" width="23" height="23" @click="openAdd"/>
+      <el-tooltip :content="$t('batchRandomUsers')" placement="bottom">
+        <Icon class="icon" icon="material-symbols:alternate-email" width="22" height="22" @click="openBatchAdd"/>
+      </el-tooltip>
       <div class="search">
         <el-input
             v-model="params.email"
@@ -184,6 +187,63 @@
         </el-select>
         <el-button class="btn" type="primary" @click="submit" :loading="addLoading"
         >{{ $t('add') }}
+        </el-button>
+      </div>
+    </el-dialog>
+    <el-dialog
+        class="batch-dialog"
+        v-model="showBatchAdd"
+        :title="$t('batchRandomUsers')"
+        :close-on-click-modal="false"
+        :close-on-press-escape="!batchLoading"
+        @closed="resetBatchForm"
+    >
+      <el-form class="batch-form" label-position="top">
+        <div class="batch-form-grid">
+          <el-form-item :label="$t('batchQuantity')">
+            <el-input-number v-model="batchForm.count" :min="1" :max="50" controls-position="right"/>
+          </el-form-item>
+          <el-form-item :label="$t('prefixLength')">
+            <el-input-number v-model="batchForm.prefixLength" :min="6" :max="20" controls-position="right"/>
+          </el-form-item>
+          <el-form-item :label="$t('domain')">
+            <el-select v-model="batchForm.suffix" :placeholder="$t('select')">
+              <el-option v-for="item in domainList" :key="item" :label="item" :value="item"/>
+            </el-select>
+          </el-form-item>
+          <el-form-item :label="$t('perm')">
+            <el-select v-model="batchForm.type" :placeholder="$t('select')">
+              <el-option v-for="item in roleList" :label="item.name" :value="item.roleId" :key="item.roleId"/>
+            </el-select>
+          </el-form-item>
+        </div>
+        <el-button :disabled="batchLoading" @click="generateBatchPreview">
+          {{ $t('generatePreview') }}
+        </el-button>
+      </el-form>
+
+      <el-table v-if="batchRows.length" class="batch-preview" :data="batchRows" max-height="300" stripe>
+        <el-table-column prop="email" :label="$t('emailAccount')" min-width="210"/>
+        <el-table-column prop="password" :label="$t('password')" min-width="145"/>
+        <el-table-column :label="$t('tabStatus')" width="100">
+          <template #default="props">
+            <el-tag v-if="props.row.status === 'success'" type="success">{{ $t('batchSuccess') }}</el-tag>
+            <el-tooltip v-else-if="props.row.status === 'failed'" :content="props.row.message || $t('batchFailed')">
+              <el-tag type="danger">{{ $t('batchFailed') }}</el-tag>
+            </el-tooltip>
+            <el-tag v-else-if="props.row.status === 'creating'" type="warning">{{ $t('batchCreating') }}</el-tag>
+            <el-tag v-else type="info">{{ $t('batchPending') }}</el-tag>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <div v-if="batchLoading" class="batch-progress">
+        <el-progress :percentage="Math.round(batchProgress / batchRows.length * 100)"/>
+      </div>
+      <div v-if="batchRows.length" class="batch-actions">
+        <el-button :disabled="batchLoading" @click="copyBatchCredentials">{{ $t('copyCredentials') }}</el-button>
+        <el-button type="primary" :loading="batchLoading" :disabled="batchHasCompleted" @click="submitBatch">
+          {{ $t('batchCreate') }}
         </el-button>
       </div>
     </el-dialog>
@@ -443,6 +503,13 @@ const addForm = reactive({
   type: null,
 })
 
+const batchForm = reactive({
+  count: 10,
+  prefixLength: 10,
+  suffix: settingStore.domainList[0],
+  type: null,
+})
+
 const params = reactive({
   email: '',
   num: 1,
@@ -458,8 +525,13 @@ const userForm = reactive({
 })
 
 const showAdd = ref(false)
+const showBatchAdd = ref(false)
 const accountShow = ref(false)
 const addLoading = ref(false);
+const batchLoading = ref(false)
+const batchProgress = ref(0)
+const batchHasCompleted = ref(false)
+const batchRows = ref([])
 const setTypeShow = ref(false)
 const setPwdShow = ref(false)
 const pagerCount = ref(10)
@@ -504,6 +576,13 @@ watch(() => roleStore.refresh, () => {
 
 watch(() => userStore.refreshList, () => {
   getUserList(false)
+})
+
+watch(() => [batchForm.count, batchForm.prefixLength, batchForm.suffix, batchForm.type], () => {
+  if (batchLoading.value) return
+  batchRows.value = []
+  batchProgress.value = 0
+  batchHasCompleted.value = false
 })
 
 getUserList()
@@ -689,6 +768,140 @@ function resetAddForm() {
 
 function openAdd() {
   showAdd.value = true
+}
+
+function openBatchAdd() {
+  if (batchForm.type === null) {
+    batchForm.type = roleList.find(item => Number(item.roleId) !== 0)?.roleId ?? roleList[0]?.roleId ?? null
+  }
+  showBatchAdd.value = true
+}
+
+function randomString(length, alphabet) {
+  const values = new Uint32Array(length)
+  crypto.getRandomValues(values)
+  return Array.from(values, value => alphabet[value % alphabet.length]).join('')
+}
+
+function randomEmailPrefix(length) {
+  const first = randomString(1, 'abcdefghijklmnopqrstuvwxyz')
+  return first + randomString(length - 1, 'abcdefghijklmnopqrstuvwxyz0123456789')
+}
+
+function randomPassword() {
+  return 'A7' + randomString(12, 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
+}
+
+function resetBatchForm() {
+  if (batchLoading.value) return
+  batchForm.count = 10
+  batchForm.prefixLength = 10
+  batchForm.suffix = settingStore.domainList[0]
+  batchForm.type = roleList.find(item => Number(item.roleId) !== 0)?.roleId ?? roleList[0]?.roleId ?? null
+  batchRows.value = []
+  batchProgress.value = 0
+  batchHasCompleted.value = false
+}
+
+function generateBatchPreview() {
+  if (!batchForm.suffix) {
+    ElMessage({message: t('emptyDomain'), type: 'error', plain: true})
+    return
+  }
+
+  if (batchForm.type === null || batchForm.type === undefined) {
+    ElMessage({message: t('emptyRole'), type: 'error', plain: true})
+    return
+  }
+
+  const count = Math.min(50, Math.max(1, Math.floor(Number(batchForm.count) || 1)))
+  const prefixLength = Math.min(20, Math.max(6, Math.floor(Number(batchForm.prefixLength) || 10)))
+  batchForm.count = count
+  batchForm.prefixLength = prefixLength
+
+  const emails = new Set()
+  const rows = []
+
+  while (rows.length < count) {
+    const email = randomEmailPrefix(prefixLength) + batchForm.suffix
+    if (emails.has(email)) continue
+    emails.add(email)
+    rows.push({
+      email,
+      password: randomPassword(),
+      type: batchForm.type,
+      status: 'pending',
+      message: '',
+    })
+  }
+
+  batchRows.value = rows
+  batchProgress.value = 0
+  batchHasCompleted.value = false
+}
+
+async function copyBatchCredentials() {
+  const rows = batchRows.value.filter(item => item.status !== 'failed')
+  if (!rows.length) return
+
+  try {
+    await navigator.clipboard.writeText(rows.map(item => `${item.email}\t${item.password}`).join('\n'))
+    ElMessage({message: t('copySuccessMsg'), type: 'success', plain: true})
+  } catch (error) {
+    ElMessage({message: t('copyFailMsg'), type: 'error', plain: true})
+  }
+}
+
+async function submitBatch() {
+  if (batchLoading.value) return
+  if (!batchRows.value.length) {
+    generateBatchPreview()
+    if (!batchRows.value.length) return
+  }
+
+  batchLoading.value = true
+  batchProgress.value = 0
+  let success = 0
+  let failed = 0
+
+  try {
+    for (let index = 0; index < batchRows.value.length; index += 5) {
+      const chunk = batchRows.value.slice(index, index + 5)
+      chunk.forEach(item => {
+        item.status = 'creating'
+      })
+
+      const results = await Promise.allSettled(chunk.map(item => userAdd({
+        email: item.email,
+        password: item.password,
+        type: item.type,
+      }, true)))
+
+      results.forEach((result, resultIndex) => {
+        const row = chunk[resultIndex]
+        if (result.status === 'fulfilled') {
+          row.status = 'success'
+          success += 1
+        } else {
+          row.status = 'failed'
+          row.message = result.reason?.message || result.reason?.response?.data?.message || t('batchFailed')
+          failed += 1
+        }
+      })
+
+      batchProgress.value += chunk.length
+    }
+
+    batchHasCompleted.value = true
+    ElMessage({
+      message: t('batchCreateResult', {success, failed}),
+      type: failed ? 'warning' : 'success',
+      plain: true,
+    })
+    getUserList(false)
+  } finally {
+    batchLoading.value = false
+  }
 }
 
 function submit() {
@@ -1119,6 +1332,40 @@ function adjustWidth() {
   display: grid;
   grid-template-columns: 1fr;
   gap: 15px;
+}
+
+:deep(.batch-dialog) {
+  width: min(720px, calc(100% - 40px)) !important;
+}
+
+.batch-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 16px;
+
+  :deep(.el-input-number),
+  :deep(.el-select) {
+    width: 100%;
+  }
+
+  @media (max-width: 600px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.batch-preview {
+  margin-top: 16px;
+}
+
+.batch-progress {
+  margin-top: 16px;
+}
+
+.batch-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
 }
 
 .type {

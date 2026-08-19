@@ -22,8 +22,8 @@ export function userDelete(userIds) {
     return http.delete('/user/delete', {params:{userIds: userIds + ''}})
 }
 
-export function userAdd(form) {
-    return http.post('/user/add', form)
+export function userAdd(form, noMsg = false) {
+    return http.post('/user/add', form, {noMsg})
 }
 
 export function userRestSendCount(userId) {
