@@ -7,6 +7,7 @@ import { emailConst, isDel } from '../const/entity-const';
 import accountService from './account-service';
 import emailUtils from '../utils/email-utils';
 import verifyUtils from '../utils/verify-utils';
+import { extractDigitCode, normalizeExtractedCode } from '../utils/verification-code-utils';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -80,26 +81,22 @@ const mailboxApiService = {
 
 		if (!emailRow) return null;
 
+		const storedCode = normalizeExtractedCode(emailRow.code);
+
 		return {
 			emailId: emailRow.emailId,
-			code: emailRow.code || this.extractCode(emailRow),
+			code: storedCode || this.extractCode(emailRow),
 			createTime: emailRow.createTime,
 		};
 	},
 
 	extractCode(emailRow) {
-		const content = [
-			emailRow.subject || '',
+		const body = [
 			emailRow.text || '',
 			emailUtils.htmlToText(emailRow.content || ''),
 		].join('\n');
 
-		const keywordMatch = content.match(
-			/(?:验证码|校验码|动态码|verification\s*code|security\s*code|one[-\s]*time\s*(?:password|code)|otp)[^a-z0-9]{0,24}([a-z0-9]{4,8})/iu
-		);
-		if (keywordMatch) return keywordMatch[1];
-
-		return content.match(/(?<!\d)\d{4,8}(?!\d)/)?.[0] || '';
+		return extractDigitCode(emailRow.subject || '', body);
 	},
 
 	async sign(c, payload) {
