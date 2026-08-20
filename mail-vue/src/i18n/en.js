@@ -84,7 +84,7 @@ const en = {
     batchQuantity: 'Quantity',
     prefixLength: 'Random Prefix Length',
     generatePreview: 'Generate Preview',
-    copyCredentials: 'Copy Emails, Passwords and APIs',
+    copyCredentials: 'Copy Emails and Code APIs',
     batchCreate: 'Create Batch',
     batchPending: 'Pending',
     batchCreating: 'Creating',

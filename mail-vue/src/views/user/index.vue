@@ -250,7 +250,10 @@
         <el-progress :percentage="Math.round(batchProgress / batchRows.length * 100)"/>
       </div>
       <div v-if="batchRows.length" class="batch-actions">
-        <el-button :disabled="batchLoading" @click="copyBatchCredentials">{{ $t('copyCredentials') }}</el-button>
+        <el-button
+            :disabled="batchLoading || !batchRows.some(item => item.status === 'success' && item.apiUrl)"
+            @click="copyBatchMailboxApis"
+        >{{ $t('copyCredentials') }}</el-button>
         <el-button type="primary" :loading="batchLoading" :disabled="batchHasCompleted" @click="submitBatch">
           {{ $t('batchCreate') }}
         </el-button>
@@ -871,11 +874,11 @@ function generateBatchPreview() {
   batchHasCompleted.value = false
 }
 
-async function copyBatchCredentials() {
-  const rows = batchRows.value.filter(item => item.status !== 'failed')
+async function copyBatchMailboxApis() {
+  const rows = batchRows.value.filter(item => item.status === 'success' && item.apiUrl)
   if (!rows.length) return
 
-  await copyText(rows.map(item => `${item.email}\t${item.password}\t${item.apiUrl || ''}`).join('\n'))
+  await copyText(rows.map(item => `${item.email}----${item.apiUrl}`).join('\n'))
 }
 
 async function copyText(value) {

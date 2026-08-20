@@ -84,7 +84,7 @@ const zh = {
     batchQuantity: '创建数量',
     prefixLength: '随机前缀长度',
     generatePreview: '生成预览',
-    copyCredentials: '复制邮箱、密码和 API',
+    copyCredentials: '复制邮箱和接码地址',
     batchCreate: '批量创建',
     batchPending: '待创建',
     batchCreating: '创建中',
